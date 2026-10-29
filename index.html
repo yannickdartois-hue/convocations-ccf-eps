@@ -657,6 +657,7 @@ input[type="date"]:focus {
 <button class="save-btn" onclick="exportConfigJSON()" title="Télécharger la config en fichier JSON (portable)">⬇️ Exporter config</button>
 <label class="save-btn" style="cursor:pointer;margin-left:.25rem" title="Charger une config JSON exportée précédemment">⬆️ Importer config<input type="file" accept=".json" onchange="importConfigJSON(this)" style="display:none"></label>
 <button class="dark-toggle" onclick="toggleDark()" id="dark-btn" title="Mode sombre">🌙 Sombre</button>
+<button class="save-btn" onclick="EPSAide.ouvrir()" title="Mode d’emploi" aria-label="Mode d’emploi" style="font-weight:900;font-size:1rem;margin-left:.25rem">?</button>
 </header>
 <!-- ══════════════ NAV ══════════════════ -->
 <nav class="fr-tabs-nav">
@@ -2160,4 +2161,6 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 
 <script>if('serviceWorker' in navigator&&location.protocol==='https:'){addEventListener('load',function(){navigator.serviceWorker.register('sw.js').catch(function(){})})}</script>
+<script src="aide.js"></script>
+<script src="eps-aide.js"></script>
 </body></html>
