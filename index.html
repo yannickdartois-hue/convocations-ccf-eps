@@ -864,6 +864,10 @@ pour passer l'épreuve d'EPS, comptant pour l'obtention de la note EPS à l'exam
 <textarea class="fr-textarea" id="f-important" rows="4">Toute absence doit impérativement être justifiée par un certificat médical daté au plus tard de la date de l'épreuve. Celui-ci doit parvenir dans les 8 jours au lycée à l'attention du professeur d'EPS.
 Une épreuve de rattrapage sera alors proposée en fin d'année scolaire.</textarea>
 </div>
+<div class="field">
+<label>Mention vidéo (avec cases « J'accepte » / « Je refuse ») — laisser vide pour ne pas l'imprimer</label>
+<textarea class="fr-textarea" id="f-video" rows="3">L'épreuve pourra être filmée, uniquement pour l'évaluation par les professeurs d'EPS. Les vidéos ne sont pas diffusées et sont supprimées après la session.</textarea>
+</div>
 </div>
 </div>
 </div><!-- /form-grid -->
@@ -959,6 +963,7 @@ let sigUrl  = '/9j/4AAQSkZJRgABAQEBkAGQAAD/4QAiRXhpZgAATU0AKgAAAAgAAQESAAMAAAABA
 const COL_TYPES = [
   ['', '— Ignorer —'],
   ['prenom', 'Prénom'],
+  ['prenom_usage', 'Prénom d\u2019usage (remplace le prénom s\u2019il est rempli)'],
   ['nom', 'NOM'],
   ['nom_prenom', 'NOM + Prénom (combiné)'],
   ['prenom_nom', 'Prénom + NOM (combiné)'],
@@ -1092,28 +1097,31 @@ function renderDataTable() {
 }
 
 function autoDetect() {
-  const keywords = {
-    prenom: ['prenom', 'prénom', 'first', 'firstname', 'given'],
-    nom: ['nom de famille', 'lastname', 'surname'],
-    nom_prenom: ['nom', 'élève', 'eleve', 'etudiant', 'étudiant'],
-    classe: ['classe', 'class', 'group', 'groupe', 'division', 'niveau'],
-    date: ['date', 'jour'],
-    heure: ['heure', 'horaire', 'time', 'creneau', 'créneau'],
-    activite: ['activite', 'activité', 'sport', 'apsa', 'discipline', 'matiere', 'matière'],
-    lieu: ['lieu', 'salle', 'place', 'location'],
-  };
-  let count = 0;
+  /* Ordre et règles : « Prénom d'usage » à part ; « Nom » seul = le NOM ; une seule colonne par type ;
+     « Classe » prime sur « Groupes » ou « Niveau » (Pronote a les deux). */
+  const regles = [
+    ['prenom_usage', /prenom d.?\s?usage/],
+    ['nom_prenom', /^(eleves?|etudiants?|nom (et |- |\/ )?prenom|identite|nom complet)$/],
+    ['prenom', /prenom|first|given/],
+    ['nom', /^nom$|nom de famille|lastname|surname|^nom /],
+    ['classe', /^classes?$|^division|^class$/],
+    ['date', /date|jour/],
+    ['heure', /heure|horaire|time|creneau/],
+    ['activite', /activite|sport|apsa|discipline|matiere/],
+    ['lieu', /lieu|salle|place|location/],
+  ];
+  const secours = [['classe', /groupe|group|niveau|classe/]];
+  const pris = new Set(); let count = 0;
+  const norm = h => String(h||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/['’]/g,' ').replace(/\s+/g,' ').trim();
+  colHeaders.forEach((_, i) => { colMap[i] = ''; const el = document.getElementById('cs-' + i); if (el) el.value = ''; });
+  const poser = (i, t) => { colMap[i] = t; pris.add(t); const el = document.getElementById('cs-' + i); if (el) { el.value = t; count++; } };
   colHeaders.forEach((h, i) => {
-    const lh = h.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    let found = '';
-    for (const [type, kws] of Object.entries(keywords)) {
-      if (kws.some(w => lh.includes(w))) { found = type; break; }
-    }
-    if (found) {
-      colMap[i] = found;
-      const el = document.getElementById('cs-' + i);
-      if (el) { el.value = found; count++; }
-    }
+    const lh = norm(h); if (!lh) return;
+    for (const [type, re] of regles) { if (re.test(lh)) { if (!pris.has(type)) poser(i, type); return; } }
+  });
+  colHeaders.forEach((h, i) => {
+    const lh = norm(h); if (!lh || colMap[i]) return;
+    for (const [type, re] of secours) { if (re.test(lh) && !pris.has(type)) { poser(i, type); return; } }
   });
   if (count > 0)
     setNotif('notif-map', 'ok', '🔍 ' + count + ' colonne(s) identifiée(s). Vérifiez et corrigez si nécessaire.');
@@ -1144,10 +1152,13 @@ function buildStudents() {
           s.nom = val.toUpperCase();
         } else if (type === 'prenom') {
           s.prenom = val;
+        } else if (type === 'prenom_usage') {
+          if (val) s.prenomUsage = val;
         } else {
           s[type] = val;
         }
       });
+      if (s.prenomUsage) s.prenom = s.prenomUsage;
       // Construire le nom complet
       if (!s.fullname) {
         if (s.nom && s.prenom) s.fullname = s.nom + ' ' + s.prenom;
@@ -1359,7 +1370,7 @@ function buildConfig() {
     activite: gv('f-activite'), lieu: gv('f-lieu'),
     titre: gv('f-titre'), soustitre: gv('f-soustitre'), ccf: gv('f-ccf'),
     corps: gv('f-corps'), important: gv('f-important'),
-    sigTitre: gv('f-sig-titre'), sigNom: gv('f-sig-nom'), sigParents: gv('f-sig-parents'),
+    sigTitre: gv('f-sig-titre'), sigNom: gv('f-sig-nom'), sigParents: gv('f-sig-parents'), video: gv('f-video'),
     logoUrl: logoUrl, sigUrl: sigUrl,
   };
 }
@@ -1373,7 +1384,7 @@ function applyConfig(cfg) {
   set('f-activite', cfg.activite); set('f-lieu', cfg.lieu);
   set('f-titre', cfg.titre); set('f-soustitre', cfg.soustitre); set('f-ccf', cfg.ccf);
   set('f-corps', cfg.corps); set('f-important', cfg.important);
-  set('f-sig-titre', cfg.sigTitre); set('f-sig-nom', cfg.sigNom); set('f-sig-parents', cfg.sigParents);
+  set('f-sig-titre', cfg.sigTitre); set('f-sig-nom', cfg.sigNom); set('f-sig-parents', cfg.sigParents); set('f-video', cfg.video);
   if (cfg.logoUrl) { logoUrl = cfg.logoUrl; document.getElementById('logo-prev').src = logoUrl; document.getElementById('hdr-logo').src = logoUrl; }
   if (cfg.sigUrl)  { sigUrl  = cfg.sigUrl;  document.getElementById('sig-prev').src = sigUrl; }
   markTabDone(2);
@@ -1471,6 +1482,7 @@ async function generatePDF() {
     sigTitre:  gv('f-sig-titre'),
     sigNom:    gv('f-sig-nom'),
     sigParents:gv('f-sig-parents'),
+    video:     gv('f-video'),
   };
 
   const dateComplete = F.jour + ' ' + F.date;
@@ -1496,7 +1508,7 @@ async function generatePDF() {
     const y0 = yTop + (ci > 0 ? 3 : 1);
 
     // ── Logo haut-droite (petit, ne déborde pas sur le tableau) ──
-    const logoSize = 12;
+    const logoSize = 22;
     const logoX = PW - M - logoSize;
     const logoY = y0 + 1;
     if (logoUrl && logoUrl.length > 100) {
@@ -1516,7 +1528,7 @@ async function generatePDF() {
     // Établissement haut-droite (sous le logo si logo présent, sinon à y0+4)
     doc.setFont('times', 'normal');
     doc.setFontSize(8.5);
-    doc.text(F.etab + ' - ' + F.ville, PW - M, y0 + (logoUrl && logoUrl.length > 100 ? logoY + logoSize + 1.5 : 4), { align: 'right' });
+    doc.text(F.etab + ' - ' + F.ville, textRightLimit - 1, y0 + 4, { align: 'right' });
 
     doc.setFont('times', 'bold');
     doc.setFontSize(11);
@@ -1689,6 +1701,22 @@ async function generatePDF() {
       } catch (e) { /* ignore */ }
     }
 
+    // Mention vidéo (sous le cadre du cachet, au-dessus de la signature des parents)
+    if (F.video && F.video.trim()) {
+      doc.setTextColor(0);
+      doc.setFont('times', 'italic');
+      doc.setFontSize(7.5);
+      const vL = doc.splitTextToSize(F.video.trim(), sigW);
+      let vy = Math.max(sgY + sgBH / 1.6, sigImgY + sigImgH / 1.6) + 3.2;
+      vL.slice(0, 4).forEach(l => { doc.text(l, sigX, vy); vy += 2.9; });
+      doc.setFont('times', 'normal');
+      doc.setFontSize(8.5);
+      vy += 0.8;
+      doc.setDrawColor(60); doc.setLineWidth(0.25);
+      doc.rect(sigX, vy - 2.6, 3, 3); doc.text("J'accepte", sigX + 4.2, vy);
+      doc.rect(sigX + 24, vy - 2.6, 3, 3); doc.text('Je refuse', sigX + 28.2, vy);
+    }
+
     // Zone parents
     const pY = sgIY + 1;
     doc.setFont('times', 'normal');
@@ -1707,13 +1735,18 @@ async function generatePDF() {
     await new Promise(r => setTimeout(r, 5));
   }
 
+  // ── Dernière page : 3 convocations vierges (oublis) ──
+  doc.addPage();
+  const vierge = { fullname: '……………………………………', classe: '……………', vierge: true };
+  [0, 1, 2].forEach(ci => drawConv(vierge, M + ci * CONV_H, ci));
+
   const fname = 'convocations_EPS_' + new Date().toISOString().slice(0, 10) + '.pdf';
   doc.save(fname);
 
   document.getElementById('gen-prog').style.display = 'none';
   document.getElementById('gen-result').innerHTML =
     '<div class="notif notif-ok" style="margin-bottom:.9rem">✅ PDF généré : <strong>' +
-    sel.length + ' convocation(s)</strong> sur <strong>' + pages.length + ' page(s)</strong> — fichier « ' + fname + ' » téléchargé.</div>';
+    sel.length + ' convocation(s)</strong> sur <strong>' + pages.length + ' page(s)</strong>, plus une page de 3 convocations vierges — fichier « ' + fname + ' » téléchargé.</div>';
   setTimeout(() => { document.getElementById('gen-result').innerHTML = ''; }, 10000);
   markTabDone(3);
 }
@@ -1741,6 +1774,7 @@ function getFormValues() {
     sigTitre:  gv('f-sig-titre'),
     sigNom:    gv('f-sig-nom'),
     sigParents:gv('f-sig-parents'),
+    video:     gv('f-video'),
   };
 }
 
@@ -1790,7 +1824,7 @@ function _drawPreview(canvas, F, S, PW, PH, M, CW, logoImg, sigImg) {
   const tY        = M + p(32);          // haut du tableau CCF
 
   // Logo haut-droite, coin droit, 8mm × 8mm
-  const logoSz = p(8);
+  const logoSz = p(15);
   const logoX  = PW - M - logoSz;
   const logoY  = M + p(1);
   if (logoImg) ctx.drawImage(logoImg, logoX, logoY, logoSz, logoSz);
@@ -1947,7 +1981,7 @@ function drawRichLine(ctx, text, x, y, boldSegs, fontSize) {
 function attachPreviewListeners() {
   const ids = ['f-etab','f-ville','f-session','f-jour','f-date-picker','f-horaire',
                'f-activite','f-lieu','f-titre','f-soustitre','f-ccf',
-               'f-corps','f-important','f-sig-titre','f-sig-nom'];
+               'f-corps','f-important','f-sig-titre','f-sig-nom','f-video'];
   ids.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('input', () => { markTabDone(2); updatePreview(); });
